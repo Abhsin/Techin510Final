@@ -2,7 +2,11 @@ import pandas as pd
 import requests
 import streamlit as st
 import datetime
-import altair as alt
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
+import numpy as np
 from dotenv import load_dotenv
 import os
 
@@ -15,12 +19,24 @@ def create_folder_if_not_exists(folder_name):
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
 
+# Function to plot predictive graph
+def plot_predictive_graph(df, y_pred_proba):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(df['date'], y_pred_proba[:, 1], label='Probability of Going Up', color='blue')
+    ax.plot(df['date'], y_pred_proba[:, 0], label='Probability of Going Down', color='red')
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Probability')
+    ax.set_title('Predictive Probabilities of Stock Direction')
+    ax.legend()
+    ax.grid(True)
+    st.pyplot(fig)
+
 # Streamlit UI
-st.title("Stock Historical Data")
+st.title("Stock Predictive Analysis")
 
 symbol = st.text_input("Enter Stock Symbol (e.g., AAPL):")
 
-if st.button("Get Historical Data"):
+if st.button("Analyze Stock"):
     # Get current date and time
     current_datetime = datetime.datetime.now()
 
@@ -49,33 +65,22 @@ if st.button("Get Historical Data"):
         filename = f"{folder_name}/{symbol}_historical_data.csv"
         df.to_csv(filename, index=False)
 
-        # Display data
-        st.write(df)
-        st.success(f"Data saved to {filename}")
+        # Preprocessing
+        X = df[['o', 'h', 'l', 'c', 'v']]  # Features
+        y = df['c'] > df['o']  # Target variable (1 if closing price is higher than opening price, else 0)
 
-        # Create chart with Altair
-        base = alt.Chart(df).encode(x='date:T')
+        # Splitting data into train and test sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # Line chart for closing prices
-        line_chart = base.mark_line().encode(
-            y='c:Q',
-            color=alt.condition(
-                alt.datum.o > alt.datum.c,
-                alt.value("green"),
-                alt.value("red")
-            )
-        ).properties(title=f"{symbol} Closing Prices")
+        # Training RandomForestClassifier
+        clf = RandomForestClassifier(random_state=42)
+        clf.fit(X_train, y_train)
 
-        # Volume chart
-        volume_chart = base.mark_bar(opacity=0.5).encode(
-            y='v:Q'
-        ).properties(title="Trading Volume")
+        # Predictions
+        y_pred_proba = clf.predict_proba(X)
 
-        # Combine both charts
-        combined_chart = alt.layer(line_chart, volume_chart).resolve_scale(y='independent')
-
-        # Display combined chart
-        st.altair_chart(combined_chart, use_container_width=True)
+        # Plot predictive graph
+        plot_predictive_graph(df, y_pred_proba)
 
     else:
         st.error("Error fetching data. Please check the symbol or try again later.")
